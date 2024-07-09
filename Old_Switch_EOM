@@ -1,0 +1,113 @@
+Option Explicit
+Option Base 1
+    
+Sub Switch()
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.Calculation = xlCalculationManual
+
+        Dim h           As Integer, wsf             As WorksheetFunction, _
+            i           As Integer, wbHome          As Workbook, _
+            j           As Integer, wsWeightings    As Worksheet, _
+            k           As Integer, wsInstrx        As Worksheet, _
+            lRow        As Integer, wsFusionFile    As Worksheet, _
+            lCol        As Integer, wsMap           As Worksheet, _
+            m           As Integer, _
+            u           As Integer
+
+        Set wsf = Application.WorksheetFunction
+        Set wbHome = ThisWorkbook
+        With wbHome
+            Set wsMap = .Worksheets("Map_GD")
+            Set wsWeightings = .Worksheets("Weightings")
+            Set wsInstrx = .Worksheets("Copy")
+            Set wsFusionFile = .Worksheets("FusionFile")
+            wsFusionFile.UsedRange.ClearContents
+        End With
+
+        Dim SwitchDate$
+        SwitchDate = Format(ThisWorkbook.Worksheets("Weightings").Range("D2"), "YYYYMMDD")
+        Dim Arr_Header() As Variant
+        Arr_Header = Array("Date", "Option", "Portfolio", "Cashflow", "Comment")
+        
+        Dim Arr_Fusion() As Variant
+        Dim Pool$, Asset_Class$, Options$
+
+        With wsInstrx                                                                                   'GD "Small" loop
+            Dim CashflowAR#
+            lRow = 29
+            lCol = wsf.CountA(.Rows(12))
+            For h = 3 To lCol                                                                           'hth Asset Class
+                For i = 16 To lRow
+                    CashflowAR = .Cells(i, h).Value
+                    Asset_Class = .Cells(12, h)                                                         'Asset Class    (L2)[AR]
+                    Options = .Cells(i, 1)                                                              'Option         (L3)[AR]
+                    u = InStr(1, Asset_Class, "S3")                                                     'Condition 1
+                    If u <> 0 Then                                                                      'Test for GD Option
+                        Exit For
+                    ElseIf u = 0 And _
+                        (CashflowAR < -0.01 Or CashflowAR > 0.01) Then                                  'Interval       (L1)[AR]
+                        j = j + 1
+                        ReDim Preserve Arr_Fusion(1 To 5, 1 To j)
+                        Arr_Fusion(1, j) = Format(Date, "YYYYMMDD")                                     'Date
+                        Arr_Fusion(2, j) = .Cells(i, 1).Value                                           'Option         (L3)[A*]
+                        Arr_Fusion(3, j) = wsf.VLookup(Asset_Class, wsMap.Columns("A:B"), 2, False)     'Portfolio      (L1)[AR]
+                        Arr_Fusion(4, j) = CashflowAR                                                   'Cashflow       (L1)[AR]
+                        Arr_Fusion(5, j) = "Rebalance as at " & SwitchDate                              'Comment
+                    End If
+                Next i
+            Next h
+        End With
+
+        With wsWeightings                                                                               'PD "Big" loop
+            .Columns("C:E").UnMerge
+            .Columns("C:E").ClearContents
+            .Range("G5:DI500").ClearContents
+            Dim RngL1 As Range, RngL2 As Range
+            Dim Col_L2%, Row_L3%
+            Dim CashflowSU#
+            lRow = .Cells(.Rows.Count, 2).End(xlUp).Row
+            lCol = wsf.CountA(.Rows(3))
+            For h = 1 + 6 To lCol + 6                                                                   'hth Pool position
+                For i = 1 To lRow
+                    .Cells(i, 1) = Left(.Cells(i, 1), 4)                                                'Scrub Asset_Code field
+                    Pool = .Cells(2, h)                                                                 'Pool           (L3)[S2]
+                    Row_L3 = wsf.IfError(Application.Match(Pool, wsInstrx.Columns(1), 0), 0)            'Condition 1
+                    Asset_Class = .Cells(i, 1)                                                          'Asset Class    (L2)[S3]
+                    Col_L2 = wsf.IfError(Application.Match(Asset_Class, wsInstrx.Rows(12), 0), 0)       'Condition 2
+                    u = InStr(1, Asset_Class, "S3")                                                     'Condition 3
+                    If (u > 0 And Row_L3 > 0 And Col_L2 > 0) Then                                       'test instrx for PD Pool & Asset class
+                        k = i                                                                           'ith asset class position
+                        Do
+                            k = k + 1                                                                   'kth investment portfolio
+                            .Cells(k, 2) = Left(.Cells(k, 2), 4)                                        'Scrub underlying
+                            .Range("D" & k) = .Range("F" & k) / .Range("F" & i)                         'Weightings
+                            Set RngL2 = .Cells(i, h)
+                            Set RngL1 = .Range(.Cells(i + 1, h), .Cells(k, h))
+                            RngL2.Value = wsInstrx.Cells(Row_L3, Col_L2)                                'Cashflow       (L2)[S3]
+                            RngL1.Formula = "=RC4*R" & i & "C"
+                            CashflowSU = wsWeightings.Cells(k, h).Value
+                            If CashflowSU < -0.01 Or CashflowSU > 0.01 Then                             'Interval       (L1)[SU]
+                                j = j + 1
+                                ReDim Preserve Arr_Fusion(1 To 5, 1 To j)
+                                Arr_Fusion(1, j) = Format(Date, "YYYYMMDD")                             'Date
+                                Arr_Fusion(2, j) = .Cells(2, h).Value                                   'Pool           (L3)[S2]
+                                Arr_Fusion(3, j) = wsWeightings.Cells(k, 2).Value                       'Portfolio      (L1)[SU]
+                                Arr_Fusion(4, j) = CashflowSU                                           'Cashflow       (L1)[SU]
+                                Arr_Fusion(5, j) = "Rebalance as at " & SwitchDate                      'Comment
+                            End If
+                        Loop Until .Cells(k + 1, 2) = "" Or .Cells(k + 1, 2) = "Total"                  'Exit post PD computed Funds
+                    End If
+                Next i
+            Next h
+        End With
+        
+        wsFusionFile.Range("A1:E" & j) = wsf.Transpose(Arr_Fusion())                                    'Transpose Array
+        wsFusionFile.Range("A1:E1") = wsf.Transpose(wsf.Transpose(Arr_Header()))
+        
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.Calculation = xlCalculationAutomatic
+
+End Sub
