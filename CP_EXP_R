@@ -1,0 +1,80 @@
+Sub Var()
+
+    'GD file
+        Dim GDing As GD: Set GDing = New GD
+        GDing.Var_GD
+        Set GDing = Nothing
+
+    'PD file
+        Dim PDing As PD: Set PDing = New PD
+        PDing.Var_PD
+        Set PDing = Nothing
+    
+    'Trimming
+        Dim lRow%, MapFormula$, ExpFormula$
+        Dim Rngr        As Range
+        Dim wb          As Workbook:    Set wb = ThisWorkbook
+        Dim wsReport    As Worksheet:   Set wsReport = wb.Worksheets("Report")
+        With wsReport
+            .UsedRange.Borders.LineStyle = xlLineStyleNone
+        'GD
+            lRow = Application.Match(0, .Columns("B"), 1)
+            Set Rngr = .Range(.Cells(lRow + 1, 2), .Cells(50, 3))
+            Rngr.ClearContents
+            .Columns("A").ClearContents
+            If wb.Worksheets("Collateral Compliance Detail").Range("B2") <> "" Then
+            'Borders
+                .Range("B3:C" & lRow).Borders.LineStyle = xlContinuous
+            'Map
+                MapFormula = "=ISERROR(MATCH(RC2,Mapping!C4,0))"
+                Set Rngr = .Range(.Cells(3, 1), .Cells(lRow - 1, 1))
+                Rngr.Formula2R1C1Local = MapFormula
+            'Exposure
+                ExpFormula = "=SUMIFS('Collateral Compliance Detail'!C15:C15,'Collateral Compliance Detail'!C7:C7,RC2)"
+                Set Rngr = .Range(.Cells(3, 3), .Cells(lRow, 3))
+                Rngr.Formula2R1C1Local = ExpFormula
+            End If
+        'PD
+            lRow = Application.Match(0, .Columns("E"), 1)
+            Set Rngr = .Range(.Cells(lRow + 1, 5), .Cells(50, 6))
+            Rngr.ClearContents
+            .Columns("D").ClearContents
+            'Borders
+                .Range("E3:F" & lRow).Borders.LineStyle = xlContinuous
+            'Map
+                MapFormula = "=ISERROR(MATCH(RC5,Mapping!C3,0))"
+                Set Rngr = .Range(.Cells(3, 4), .Cells(lRow - 1, 4))
+                Rngr.Formula2R1C1Local = MapFormula
+            'Exposure
+                ExpFormula = "=SUMIFS('LPD with Term Exposure incl'!C14:C14,'LPD with Term Exposure incl'!C19:C19,RC5)"
+                Set Rngr = .Range(.Cells(3, 6), .Cells(lRow, 6))
+                Rngr.Formula2R1C1Local = ExpFormula
+        'GD & PD
+            lRow = Application.Match(0, .Columns("H"), 1)
+            Set Rngr = .Range(.Cells(lRow + 1, 8), .Cells(50, 9))
+            Rngr.ClearContents
+            .Columns("G").ClearContents
+            'Borders
+                .Range("H3:I" & lRow).Borders.LineStyle = xlContinuous
+            'Map
+                MapFormula = "=ISERROR(MATCH(RC8,Mapping!C2,0))"
+                Set Rngr = .Range(.Cells(3, 7), .Cells(lRow - 1, 7))
+                Rngr.Formula2R1C1Local = MapFormula
+            'Exposure
+                ExpFormula = "=SUMIFS(C3,C2,VLOOKUP(RC8,Mapping!C2:C4,3,FALSE))" & _
+                             "+SUMIFS(C6,C5,VLOOKUP(RC8,Mapping!C2:C4,2,FALSE))"
+                Set Rngr = .Range(.Cells(3, 9), .Cells(lRow, 9))
+                Rngr.Formula2R1C1Local = ExpFormula
+        'Composite
+            lRow = Application.Match(0, .Columns("K"), 1)
+            Set Rngr = .Range(.Cells(lRow + 1, 11), .Cells(50, 12))
+            Rngr.ClearContents
+            'Borders
+                .Range("K3:L" & lRow).Borders.LineStyle = xlContinuous
+            'Exposure
+                ExpFormula = "=SUMIFS(C9:C9,C8:C8,RC11 & ""*"")"
+                Set Rngr = .Range(.Cells(3, 12), .Cells(lRow, 12))
+                Rngr.Formula2R1C1Local = ExpFormula
+        End With
+    
+End Sub
