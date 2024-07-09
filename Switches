@@ -1,0 +1,239 @@
+Option Explicit
+
+Dim fso         As Object
+Dim wsf         As WorksheetFunction
+Dim wbHome      As Workbook, wbSLH      As Workbook
+Dim wsInstruct  As Worksheet, wsSLH     As Worksheet
+Dim wsFusion    As Worksheet, wsSplitD  As Worksheet
+Dim wsDirect    As Worksheet, wsSplitC  As Worksheet
+Dim wsCross     As Worksheet
+Dim wsMap       As Worksheet
+Dim wsSeed      As Worksheet
+Dim WeightsRng  As Range
+Dim lRowOfInstruction#
+Dim lRowOfFusion#
+Dim lRowWeights%
+Dim lColWeights%
+
+Sub WeightsAndCashflows()
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.Calculation = xlCalculationManual
+
+
+        'General
+        Set wsf = Application.WorksheetFunction
+        Set wbHome = ThisWorkbook
+        Set wsInstruct = wbHome.Worksheets("Instruction")
+        Set wsFusion = wbHome.Worksheets("Fusion")
+        Set wsDirect = wbHome.Worksheets("Direct_Split")
+        Set wsCross = wbHome.Worksheets("Cross_Split")
+        Set wsMap = wbHome.Worksheets("Map")
+        Set wsSeed = wbHome.Worksheets("Seeding")
+
+
+        'SLH
+        Dim fPath$
+        fPath = "S:\Investment Operations\02. Capital Market Operations\" _
+            & "2. Deliverables\1. Daily Recs and Reports\SLH\ART_SLH103_" _
+            & Format(wsf.WorkDay(Date, -2), "YYYYMMDD") & ".csv"
+        Set fso = CreateObject("Scripting.Filesystemobject")
+        Set wbSLH = Workbooks.Open(fso.getfile(fPath))
+        Set wsSLH = wbSLH.Worksheets(1)
+        Set wsSplitD = wbSLH.Worksheets.Add(, wbSLH.Worksheets(1))
+        Set wsSplitC = wbSLH.Worksheets.Add(, wbSLH.Worksheets(2))
+
+        
+        'STEPS
+        
+        '1. Clean Weights and Fusion tabs
+            wsFusion.UsedRange.ClearContents
+            wsDirect.UsedRange.ClearContents
+            wsCross.UsedRange.ClearContents
+            
+        '2. Tidy instruction
+            Dim cell As Range
+            For Each cell In wsInstruct.UsedRange
+                cell.Value = Trim(cell)
+            Next cell
+            
+        '3. Seeding rounds
+            Seeding
+        
+        '4. Create weighting scheme
+            Direct_Split
+            Cross_Split
+            wbSLH.Close (False)
+        
+        '5. Loop Instruction, Weights and Fusion tabs
+            With wsFusion
+                lRowOfFusion = 1
+                lRowOfInstruction = wsf.CountA(wsInstruct.Columns("B"))
+                Dim i%, DirectTower%, CrossTower%
+                For i = 2 To lRowOfInstruction
+                    If InStr(1, wsInstruct.Range("B" & i), "S3") > 0 Then                   'Split the cashflow
+                        DirectTower = Application.Match _
+                            (wsInstruct.Range("B" & i), wsDirect.Rows(1), 0)                'Directly held Asset Class
+                        CrossTower = Application.Match _
+                            (wsInstruct.Range("B" & i), wsCross.Rows(1), 0)                 'Cross held Asset Class
+                        Splitting wsDirect, DirectTower, i                                  'Call the direct splits
+                        Splitting wsCross, CrossTower, i                                    'Call the cross splits
+                    Else:                                                                   'cashflow is 100% allocated
+                        lRowOfFusion = lRowOfFusion + 1                                     'Increment
+                        .Range("A" & lRowOfFusion) = Format(Date, "YYYYMMDD")               'Date
+                        .Range("B" & lRowOfFusion) = Option_Error(i)                        'Mapped Option
+                        .Range("C" & lRowOfFusion) = Underlying_Error(i)                    'Underlying
+                        .Range("D" & lRowOfFusion) = wsInstruct.Range("C" & i)              'Cashflow
+                        .Range("E" & lRowOfFusion) = _
+                            "Member Cashflows as " & Format(Date, "YYYYMMDD")               'Comment
+                    End If
+                Next i
+                .Range("A1") = "Date"
+                .Range("B1") = "Option"
+                .Range("C1") = "Portfolio"
+                .Range("D1") = "Cashflow"
+                .Range("E1") = "Comment"
+            End With
+
+
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.Calculation = xlCalculationAutomatic
+    
+End Sub
+
+Private Function Option_Error(ByVal i%) As String
+
+    On Error Resume Next
+    Option_Error = wsf.VLookup( _
+        wsInstruct.Range("A" & i), _
+        wsMap.Columns("D:E"), 2, False)
+    If Option_Error = "" Then MsgBox (wsInstruct.Range("A" & i) & " is unmapped")
+    On Error GoTo 0
+
+End Function
+
+Private Function Underlying_Error(ByVal i%) As String
+
+    On Error Resume Next
+    Underlying_Error = wsf.VLookup( _
+        wsInstruct.Range("B" & i), _
+        wsMap.Columns("A:B"), 2, False)
+    If Underlying_Error = "" Then MsgBox (wsInstruct.Range("B" & i) & " is unmapped")
+    On Error GoTo 0
+
+End Function
+
+Private Sub Splitting(ByRef ws As Worksheet, Tower%, i%)
+
+    With ws
+        Dim lRowOfWeights#
+        lRowOfWeights = wsf.CountA(.Columns("B"))
+        Dim j%, W#
+        For j = 2 To lRowOfWeights
+            W = wsf.SumIfs(.Columns(Tower), _
+                .Columns("A"), .Range("A" & j))                                             'Find a weight
+            If W > 0 Then                                                                   'and if >0
+                lRowOfFusion = lRowOfFusion + 1                                             'Increment
+                wsFusion.Range("A" & lRowOfFusion) = Format(Date, "YYYYMMDD")               'Date
+                wsFusion.Range("B" & lRowOfFusion) = Option_Error(i)                        'Mapped Option
+                wsFusion.Range("C" & lRowOfFusion) = .Range("A" & j)                        'Underlying
+                wsFusion.Range("D" & lRowOfFusion) = _
+                    W * wsInstruct.Range("C" & i)                                           'Cashflow
+                wsFusion.Range("E" & lRowOfFusion) = _
+                    "Member Cashflows as " & Format(Date, "YYYYMMDD")                       'Comment
+            End If
+        Next j
+    End With
+
+End Sub
+
+Private Sub Direct_Split()
+
+    With wsSplitD
+        'Asset_Classes
+        wsDirect.Range("B1").Formula2R1C1 = _
+            "=TRANSPOSE(UNIQUE(" _
+            & "FILTER(Instruction!R2C2:R1000C2," _
+            & "ISERROR(FIND(""S3"",Instruction!R2C2:R1000C2,1))=FALSE)))"                   'Unique GD Asset Classes
+        wsDirect.Rows(1).Copy                                                               'Copied from template ws
+        .Rows(1).PasteSpecial xlPasteValues                                                 'and paste to direct temp
+        wsSplitC.Rows(1).PasteSpecial xlPasteValues                                         'and paste to cross temp
+        If IsError(.Range("B1")) Then MsgBox ("No GD asset classes to split")
+        'Underlying
+        wsSLH.Name = "SLH"                                                                  'rename SLH ws for formulaic purposes
+        .Range("A2").Formula2R1C1 = "=UNIQUE(" _
+            & "FILTER(SLH!R3C102:R100000C102," _
+            & "ISERROR(FIND(""SU"",SLH!R3C102:R100000C102,1))=False))"                      'find unique direcy underlyings
+        .Columns("A").Copy                                                                  'copy from temp ws
+        .Columns("A").PasteSpecial xlPasteValues                                            'and paste to template
+        'Weights
+        lRowWeights = wsf.CountA(.Columns("A")) + 1                                         'last row of weights scheme
+        lColWeights = wsf.CountA(.Rows(1)) + 1                                              'last col of weights scheme
+        Set WeightsRng = .Range(.Cells(2, 2), .Cells(lRowWeights, lColWeights))             'define range of underlying weights
+        WeightsRng.Formula2R1C1 = "=Round(" _
+            & "Sumifs(SLH!C60,SLH!C3,R1C,SLH!C102,RC1)" _
+            & "/" _
+            & "Sumifs(SLH!C60,SLH!C3,R1C)," _
+            & "15)"                                                                         'calculate weightings to 15 placings
+        'Template
+        .UsedRange.Copy                                                                     'copy entire scheme
+        wsDirect.Range("A1").PasteSpecial xlPasteValues                                     'paste values only to template
+    End With
+
+End Sub
+
+Private Sub Cross_Split()
+    
+    With wsSplitC
+        'Crossheld underlying
+        Dim Fund$
+        Dim lRowCX#, r#, lRowX#
+        lRowCX = wsSLH.Cells(wsSLH.Rows.Count, 102).End(xlUp).Row
+        For r = lRowCX To 3 Step -1
+            Fund = wsSLH.Range("CX" & r)                                                    'Underlying
+            If InStr(1, wsSLH.Range("C" & r), "S3") > 0 And _
+                InStr(1, Fund, "SU") = 0 And _
+                IsError(Application.Match(Fund, .Columns("A"), 0)) Then                     'search for GD cross holdings
+                lRowX = wsf.CountA(.Columns("A")) + 1                                       'increment temp ws
+                .Range("A" & lRowX + 1) = Fund                                              'include cross underlying
+            End If
+        Next r
+        'Cross Weights
+        lRowWeights = wsf.CountA(.Columns("A")) + 1                                         'last row of weights scheme
+        lColWeights = wsf.CountA(.Rows(1)) + 1                                              'last col of weights scheme
+        Set WeightsRng = .Range(.Cells(2, 2), .Cells(lRowWeights, lColWeights))             'define range of underlying weights
+        WeightsRng.Formula2R1C1 = _
+            "=Sumifs(SLH!C60,SLH!C3,R1C,SLH!C102,RC1)/Sumifs(SLH!C60,SLH!C3,R1C)"           'calculate weightings
+        'Template
+        .UsedRange.Copy                                                                     'copy entire scheme
+        wsCross.Range("A1").PasteSpecial xlPasteValues                                      'paste values only to template
+    End With
+
+End Sub
+
+Private Sub Seeding()
+
+    Dim SeedRng As Range
+    Dim l#, amount#
+    Dim s%: s = 2
+    Dim lRowSeed%, lRowSLH#
+    lRowSeed = wsSeed.Cells(wsSeed.Rows.Count, 2).End(xlUp).Row
+    lRowSLH = wsSLH.Cells(wsSLH.Rows.Count, 2).End(xlUp).Row
+    If lRowSeed > 1 Then
+        Do While s <= lRowSeed
+            For l = lRowSLH To 2 Step -1
+                If wsSLH.Range("C" & l) = wsSeed.Range("B" & s) And _
+                    wsSLH.Range("CX" & l) = wsSeed.Range("C" & s) Then
+                    amount = wsSeed.Range("D" & s)
+                    Set SeedRng = wsSLH.Range("BH" & l)
+                    SeedRng.Value = SeedRng.Value + amount
+                    Exit For
+                End If
+            Next l
+            s = s + 1
+        Loop
+    End If
+
+End Sub
