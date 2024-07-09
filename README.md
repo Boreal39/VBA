@@ -1,1 +1,1 @@
-Personal archive of my collection of code
+Personal archive of my collection of VBA code
