@@ -1,0 +1,79 @@
+Sub Files_In(ByVal wsTemp As Worksheet, ByVal f As Object)
+    
+    'A
+        Dim wsf As WorksheetFunction:   Set wsf = Application.WorksheetFunction
+        Dim h%:                         h = 0
+        Dim i%:                         i = 0
+        Dim j%:                         j = 0
+        Dim k%:                         k = 0
+        Dim Free%
+        Dim Element                     As Variant, _
+            FileArray()                 As Variant, _
+            SplitDataAgain()            As Variant, _
+            SplitData()                 As String, _
+            CopiedData$, _
+            CleanStr$, _
+            fPath1$: fPath1 = f.Path
+            
+    'B
+        Free = FreeFile
+        Open fPath1 For Binary Access Read As #Free
+        CopiedData = Space(LOF(Free))
+        Get #Free, , CopiedData
+        Close #Free
+    
+    'C
+        If CopiedData <> "" Then
+            SplitData() = Split(CopiedData, vbLf)
+            Do
+                '1
+                CleanStr = StrCleaning(i, SplitData())                  'Handle dollar values
+                '2
+                ReDim Preserve SplitDataAgain(i)                        'New row
+                SplitDataAgain(i) = Split(SplitData(i), ",")            'Populate row
+                k = UBound(SplitDataAgain(0))                           'Cols
+                h = UBound(SplitDataAgain())                            'Rows
+                i = i + 1
+            Loop Until i > (UBound(SplitData()) - 1)
+            ReDim FileArray(k, h)                                       'Proportions of file
+            '3
+            For i = 0 To h                                              'Cols
+                For j = 0 To k                                          'Rows
+                    FileArray(j, i) = SplitDataAgain(i)(j)              'Invert and populate
+                Next j
+            Next i
+            wsTemp.Range(wsTemp.Cells(1, 1), wsTemp.Cells(h + 1, k + 1)) = wsf.Transpose(FileArray())
+            Else: MsgBox ("File is empty - check email copy!")
+        End If
+
+End Sub
+
+Private Function StrCleaning(i As Integer, SplitData() As String) As String
+
+    Dim rx1                  As RegExp:           Set rx1 = New RegExp
+    Dim rx2                  As RegExp:           Set rx2 = New RegExp
+    Dim FindStr1             As String:           FindStr1 = "((?:^|,)""[^"",]*),"          'Commas for rx1
+    Dim FindStr2             As String:           FindStr2 = "(?:[""]*)([.]*)(?:[""]*)"     'Quotations for rx2
+    Dim ReplaceStr           As String:           ReplaceStr = "$1"                         'Grouping of rx1 and rx2
+    Dim p                    As Integer
+    With rx1
+        .Global = True
+        .MultiLine = True
+        .IgnoreCase = False
+        .Pattern = FindStr1                                                 'Pattern of number commas
+    End With
+    With rx2
+        .Global = True
+        .MultiLine = True
+        .IgnoreCase = False
+        .Pattern = FindStr2                                                 'Pattern of quotations
+    End With
+    
+    For p = 1 To 3
+        SplitData(i) = rx1.Replace(SplitData(i), ReplaceStr)                'Removing commas
+    Next p
+    SplitData(i) = rx2.Replace(SplitData(i), ReplaceStr)                    'Removing quotations
+    StrCleaning = SplitData(i)                                              'Return clean string
+    
+End Function
+
